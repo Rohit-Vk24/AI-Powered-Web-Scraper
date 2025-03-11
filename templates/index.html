@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>AI Chat with Scraped Data</title>
+      <style>
+        body {
+          background-color: #F7F9FA;
+          font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+          margin: 0;
+          padding: 0;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+        }
+        .chat-container {
+          background: white;
+          width: 100%;
+          max-width: 800px;
+          height: 90vh;
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+        .header {
+          background: #0079D3;
+          color: white;
+          padding: 20px;
+          text-align: center;
+          font-size: 1.25em;
+        }
+        .content {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          padding: 20px;
+          overflow-y: auto;
+          background: #F7F9FA;
+        }
+        .message {
+          max-width: 70%;
+          padding: 12px 16px;
+          margin-bottom: 12px;
+          border-radius: 16px;
+          line-height: 1.4;
+          word-wrap: break-word;
+        }
+        .user-message {
+          background: #DCF8C6;
+          align-self: flex-end;
+        }
+        .assistant-message {
+          background: #E4E6EB;
+          align-self: flex-start;
+        }
+        .input-area {
+          display: flex;
+          border-top: 1px solid #ddd;
+          padding: 10px;
+          background: #fff;
+        }
+        .input-area textarea {
+          flex: 1;
+          resize: none;
+          border: none;
+          padding: 10px;
+          font-size: 1em;
+          border-radius: 4px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          margin-right: 10px;
+        }
+        .input-area textarea:focus {
+          outline: none;
+        }
+        .input-area button {
+          background: #0079D3;
+          border: none;
+          color: white;
+          padding: 0 20px;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 1em;
+        }
+        .input-area button:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+        .scrape-form {
+          display: flex;
+          padding: 10px 20px;
+          background: #fff;
+          border-bottom: 1px solid #ddd;
+        }
+        .scrape-form input {
+          flex: 1;
+          padding: 8px;
+          font-size: 1em;
+          border: 1px solid #ccc;
+          border-radius: 4px;
+          margin-right: 10px;
+        }
+        .scrape-form button {
+          border: none;
+          color: white;
+          padding: 8px 16px;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 1em;
+        }
+        #reset-btn {
+          background: #dc3545;
+          margin-left: 10px;
+        }
+        #reset-btn:hover {
+          background: #bb2d3b;
+        }
+        #loading {
+          text-align: center;
+          font-style: italic;
+          color: #555;
+          margin-bottom: 12px;
+          display: none;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="chat-container">
+        <div class="header">
+          AI Chat with Scraped Data
+        </div>
+        <!-- Scraping Form (scraped content remains hidden) -->
+        <form class="scrape-form" method="post" id="scrape-form">
+          <input type="text" name="urls" id="urls" placeholder="Enter one or more URLs (comma-separated)" required value="{{ submitted_urls }}">
+          <button type="submit">Scrape</button>
+          <button type="button" id="reset-btn">Reset</button>
+        </form>
+        <div class="content" id="chat-log">
+          <!-- Chat messages will appear here -->
+          {% for msg in session.get("conversation", []) %}
+            {% if msg.role == 'user' %}
+              <div class="message user-message">
+                <strong>You:</strong> {{ msg.content }}
+              </div>
+            {% else %}
+              <div class="message assistant-message">
+                <strong>Assistant:</strong> {{ msg.content }}
+              </div>
+            {% endif %}
+          {% endfor %}
+        </div>
+        <div id="loading">Loading...</div>
+        <div class="input-area">
+          <textarea id="user_message" placeholder="Ask about the scraped data..." rows="1"></textarea>
+          <button id="ask-btn">Send</button>
+        </div>
+      </div>
+
+      <script>
+      document.addEventListener("DOMContentLoaded", function(){
+          const chatLog = document.getElementById("chat-log");
+          document.getElementById("reset-btn").addEventListener("click", function() {
+              fetch("/reset", {
+                  method: "POST",
+                  headers: {
+                      "Content-Type": "application/x-www-form-urlencoded"
+                  }
+              }).then(() => window.location.reload());
+          });
+          const userMessageField = document.getElementById("user_message");
+          const askBtn = document.getElementById("ask-btn");
+          const loading = document.getElementById("loading");
+
+          askBtn.addEventListener("click", function() {
+              const userMessage = userMessageField.value.trim();
+              if (!userMessage) return;
+              
+              // Append user's message immediately
+              const userDiv = document.createElement("div");
+              userDiv.className = "message user-message";
+              userDiv.innerHTML = `<strong>You:</strong> ${userMessage}`;
+              chatLog.appendChild(userDiv);
+              chatLog.scrollTop = chatLog.scrollHeight;
+              
+              // Clear textarea, show loading, and disable the send button
+              userMessageField.value = "";
+              loading.style.display = "block";
+              askBtn.disabled = true;
+              
+              // Append a placeholder for the assistant's response
+              const assistantDiv = document.createElement("div");
+              assistantDiv.className = "message assistant-message";
+              assistantDiv.innerHTML = `<strong>Assistant:</strong> <em>Assistant is typing...</em>`;
+              chatLog.appendChild(assistantDiv);
+              chatLog.scrollTop = chatLog.scrollHeight;
+
+              // Make AJAX call to the /ask endpoint
+              fetch("/ask", {
+                  method: "POST",
+                  headers: {
+                      "Content-Type": "application/x-www-form-urlencoded"
+                  },
+                  body: new URLSearchParams({ "user_message": userMessage })
+              })
+              .then(response => response.json())
+              .then(data => {
+                  // Update the placeholder with the actual response
+                  assistantDiv.innerHTML = `<strong>Assistant:</strong> ${data.assistant}`;
+                  chatLog.scrollTop = chatLog.scrollHeight;
+              })
+              .catch(err => {
+                  console.error("Error:", err);
+                  assistantDiv.innerHTML = `<strong>Assistant:</strong> [Error retrieving response]`;
+              })
+              .finally(() => {
+                  loading.style.display = "none";
+                  askBtn.disabled = false;
+              });
+          });
+      });
+      </script>
+    </body>
+    </html>
