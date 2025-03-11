@@ -1,0 +1,7 @@
+requests  
+jsonschema  # Not explicitly imported, but useful for JSON validation  
+asyncio  # Comes with Python, no need to add  
+nest-asyncio  
+Flask  
+beautifulsoup4  
+crawl4ai  # If this is a third-party package, ensure it’s installable  
